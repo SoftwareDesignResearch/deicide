@@ -114,14 +114,9 @@ def create_dv8_clustering(
             # Append node to existing list
             current_node.nested.append(entity_item) # type: ignore
 
-    # Add client entities as separate modules at root level for visualization in DV8
-    for entity in id_to_entity.values():
-        if entity.name.startswith("(Client)"):
-            client_item = DV8ClusteringNode(
-                name=entity.name,
-                type="item",
-            )
-            root_structure.append(client_item)
+    # Note: Client entities are already placed in their assigned clusters
+    # during the clustering traversal above, so we do not add them again
+    # at the root level (which would cause duplicates in the DV8 output).
 
     return DV8Clustering(
         schema_version="1.0", name=output_name, structure=root_structure
