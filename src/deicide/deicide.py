@@ -53,10 +53,19 @@ def deicide(
     nodes = set(range(len(entities)))
     res = _recursive_partition(nodes, di_edges, un_edges, node_weights, edge_weights)
 
+    # Find the max top-level cluster ID used by targets
+    max_top = max(res[ix][0] for ix in range(len(targets)))
+
+    # Place all clients in a single dedicated cluster
+    client_cluster = [max_top + 1]
+
     # Return clustering
     memberships: list[tuple[str, list[int]]] = []
     for ix, entity in enumerate(entities):
-        memberships.append((entity.id, res[ix]))
+        if ix < len(targets):
+            memberships.append((entity.id, res[ix]))
+        else:
+            memberships.append((entity.id, client_cluster))
     return memberships
 
 
