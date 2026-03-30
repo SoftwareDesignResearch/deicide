@@ -1,5 +1,8 @@
 import json
 import logging
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import click
@@ -13,12 +16,73 @@ from deicide.semantic import KielaClarkSimilarity
 logger = logging.getLogger(__name__)
 
 
+def _find_dependency_analyzer() -> Path | None:
+    """Look for the dependency-analyzer binary in common locations."""
+    # Check bundled location (neodepends/ directory next to project root)
+    bundled = Path(__file__).resolve().parent.parent.parent / "neodepends" / "dependency-analyzer"
+    if bundled.exists():
+        return bundled
+    # Check PATH
+    found = shutil.which("dependency-analyzer")
+    if found:
+        return Path(found)
+    return None
+
+
+def _run_neodepends(
+    neodepends: Path, source: Path, language: str, output_dir: Path
+) -> Path:
+    """Run the dependency-analyzer and return the path to the enhanced .db file."""
+    logger.info(f"Running neodepends on {source} ({language})...")
+    cmd = [
+        str(neodepends),
+        "--input", str(source),
+        "--output", str(output_dir),
+        "--language", language,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.error(f"neodepends failed:\n{result.stderr}")
+        quit(-1)
+    logger.info("neodepends completed successfully.")
+
+    # Find the enhanced db (post-processed)
+    db_path = output_dir / "data" / "dependencies.stackgraphs_ast.db"
+    if not db_path.exists():
+        # Fall back to any .db file in data/
+        db_files = list((output_dir / "data").glob("*.db"))
+        if not db_files:
+            logger.error("No .db file found in neodepends output.")
+            quit(-1)
+        db_path = db_files[0]
+
+    return db_path
+
+
 @click.command()
 @click.option(
     "--input",
-    required=True,
+    required=False,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to SQLite DB from neodepends.",
+)
+@click.option(
+    "--source",
+    required=False,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Path to source code repository (runs neodepends automatically).",
+)
+@click.option(
+    "--language",
+    required=False,
+    type=click.Choice(["python", "java"]),
+    help="Language of the source code (required with --source).",
+)
+@click.option(
+    "--neodepends",
+    required=False,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to the dependency-analyzer binary (auto-detected if in PATH).",
 )
 @click.option(
     "--output",
@@ -41,7 +105,14 @@ logger = logging.getLogger(__name__)
         output",
 )
 def main(
-    input: Path, output: Path, filename: str, commit_hash: str | None, dv8_result: bool
+    input: Path | None,
+    source: Path | None,
+    language: str | None,
+    neodepends: Path | None,
+    output: Path,
+    filename: str,
+    commit_hash: str | None,
+    dv8_result: bool,
 ) -> None:
     # Set up logging
     logging.basicConfig(
@@ -49,6 +120,31 @@ def main(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    # Determine input mode
+    if source and input:
+        logger.error("Cannot specify both --input and --source.")
+        quit(-1)
+    if not source and not input:
+        logger.error("Must specify either --input (db file) or --source (source code directory).")
+        quit(-1)
+
+    if source:
+        if not language:
+            logger.error("--language is required when using --source.")
+            quit(-1)
+        # Find neodepends binary
+        nd_path = neodepends or _find_dependency_analyzer()
+        if not nd_path:
+            logger.error(
+                "Could not find dependency-analyzer. "
+                "Provide --neodepends or add it to PATH."
+            )
+            quit(-1)
+        # Run neodepends into a temp directory alongside the output
+        nd_output = output.parent / f"{output.stem}_neodepends"
+        nd_output.mkdir(parents=True, exist_ok=True)
+        input = _run_neodepends(nd_path, source, language, nd_output)
 
     # Open database
     db_driver = DbDriver(input)
