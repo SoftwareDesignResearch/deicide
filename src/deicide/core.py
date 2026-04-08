@@ -21,6 +21,12 @@ class Dep:
     kind: str
 
 
+@dataclass
+class GodClassClustering:
+    members: list[tuple[str, list[int]]]
+    clients: list[tuple[str, list[int]]]
+
+
 _CLUSTER_PATH_SEP = "$"
 
 

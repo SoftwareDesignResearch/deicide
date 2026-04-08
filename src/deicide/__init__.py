@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 GROUP_COLORS = ["cyan", "green", "yellow", "magenta", "blue", "red", "white", "bright_cyan", "bright_green", "bright_yellow"]
+CLIENT_ENTITY_PREFIX = "(Client)"
 
 
 def _print_header():
@@ -270,30 +271,21 @@ def main(
     click.secho("[3/3] Running decomposition...", fg="bright_white", bold=True)
     clustering = deicide(children, clients, internal_deps + client_deps, semantic)
 
-    # Create hex_id to entity mapping (file entities + clients)
     id_to_entity = {entity.id: entity for entity in children}
-
-    # Add clients to the mapping with modified names
     for client in clients:
-        modified_client = Entity(
+        id_to_entity[client.id] = Entity(
             id=client.id,
-            name=f"(Client) {client.name}",
+            name=f"{CLIENT_ENTITY_PREFIX} {client.name}",
             parent_id=client.parent_id,
             kind=client.kind,
         )
-        id_to_entity[modified_client.id] = modified_client
 
-    # Build cluster groups for display using top 2 levels of the path
     cluster_groups: dict[tuple, list[str]] = defaultdict(list)
-    client_list: list[str] = []
-    for entity_id, cluster_path in clustering:
-        name = id_to_entity[entity_id].name
-        if name.startswith("(Client)"):
-            client_list.append(name)
-        else:
-            # Use up to first 2 levels for grouping
-            key = tuple(cluster_path[:2]) if len(cluster_path) >= 2 else tuple(cluster_path)
-            cluster_groups[key].append(name)
+    for entity_id, cluster_path in clustering.members:
+        key = tuple(cluster_path[:2]) if len(cluster_path) >= 2 else tuple(cluster_path)
+        cluster_groups[key].append(id_to_entity[entity_id].name)
+
+    client_names = [id_to_entity[entity_id].name for entity_id, _ in clustering.clients]
 
     click.echo()
     click.secho("-" * 60, fg="bright_white")
@@ -304,20 +296,19 @@ def main(
         click.secho(f"\n  Group {i + 1} ({len(members)} entities):", fg=color, bold=True)
         for m in members:
             click.secho(f"    - {m}", fg=color)
-    if client_list:
-        click.secho(f"\n  Clients ({len(client_list)} external files):", fg="bright_black", bold=True)
-        for c in client_list:
+    if client_names:
+        click.secho(f"\n  Clients ({len(client_names)} external files):", fg="bright_black", bold=True)
+        for c in client_names:
             click.secho(f"    - {c}", fg="bright_black")
 
-    # Write output
     with open(output, "w") as f:
-        for id, cluster in clustering:
-            name = id_to_entity[id].name
-            f.write(f"{name} : {cluster}\n")
+        for entity_id, cluster in clustering.clients:
+            f.write(f"{id_to_entity[entity_id].name} : {cluster}\n")
+        for entity_id, cluster in clustering.members:
+            f.write(f"{id_to_entity[entity_id].name} : {cluster}\n")
 
     output_name = output.stem
 
-    # Generate optional output based on flags
     click.echo()
     click.secho("-" * 60, fg="bright_white")
     click.secho("Output Files", fg="bright_white", bold=True)
@@ -325,7 +316,7 @@ def main(
     click.echo(f"  Clustering:     {output}")
 
     if dv8_result:
-        dv8_clustering = create_dv8_clustering(clustering, id_to_entity, output_name)
+        dv8_clustering = create_dv8_clustering(clustering.clients + clustering.members, id_to_entity, output_name)
         dv8_output = output.with_suffix(".dv8-clustering.json")
         with open(dv8_output, "w") as f:
             json.dump(dv8_clustering.to_dict(), f, indent=2)
