@@ -54,7 +54,7 @@ def deicide(
     res = _recursive_partition(nodes, di_edges, un_edges, node_weights, edge_weights)
 
     # Find the max top-level cluster ID used by targets
-    max_top = max(res[ix][0] for ix in range(len(targets)))
+    max_top = max((res[ix][0] for ix in range(len(targets)) if res[ix]), default=0)
 
     # Place all clients in a single dedicated cluster
     client_cluster = [max_top + 1]
