@@ -153,10 +153,13 @@ def create_dv8_dependency(
 ) -> dict[str, Any]:
     """Create DV8-compatible dependency (DSM) data"""
 
-    # Create ordered variables array (lexicographically)
+    # Create unique names (consistent with clustering output)
     entities = list(id_to_entity.values())
-    entities.sort(key=lambda e: e.name)
-    variables = [entity.name for entity in entities]
+    unique_names = create_unique_entity_names(entities)
+
+    # Create ordered variables array (lexicographically by unique name)
+    entities.sort(key=lambda e: unique_names[e.id])
+    variables = [unique_names[entity.id] for entity in entities]
 
     # Create entity name to index mapping
     entity_id_to_index = {entity.id: idx for idx, entity in enumerate(entities)}

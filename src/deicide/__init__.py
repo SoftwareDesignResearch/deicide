@@ -2,7 +2,9 @@ import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -52,7 +54,30 @@ def _run_neodepends(
         "--output", str(output_dir),
         "--language", language,
     ]
+
+    # Run with a spinner since this can take a while on large repos
+    spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    stop_spinner = threading.Event()
+    start = time.time()
+
+    def _spinner():
+        i = 0
+        while not stop_spinner.is_set():
+            elapsed = time.time() - start
+            sys.stderr.write(f"\r      {spinner_chars[i % len(spinner_chars)]} Analyzing dependencies... ({elapsed:.0f}s)")
+            sys.stderr.flush()
+            i += 1
+            stop_spinner.wait(0.1)
+        elapsed = time.time() - start
+        sys.stderr.write(f"\r      Dependency analysis completed ({elapsed:.1f}s)     \n")
+        sys.stderr.flush()
+
+    t = threading.Thread(target=_spinner, daemon=True)
+    t.start()
     result = subprocess.run(cmd, capture_output=True, text=True)
+    stop_spinner.set()
+    t.join()
+
     if result.returncode != 0:
         logger.error(f"neodepends failed:\n{result.stderr}")
         quit(-1)
