@@ -74,20 +74,19 @@ class KielaClark:
         def log(x: float) -> float:
             return 0.0 if x == 0.0 else math.log(x)
 
+        def _mi_term(p_joint: float, p_marginal_x: float, p_marginal_y: float) -> float:
+            """Compute a single MI term: p_joint * log(p_joint / (p_x * p_y)).
+            Returns 0.0 when any marginal is zero (avoids division by zero)."""
+            if p_marginal_x == 0.0 or p_marginal_y == 0.0:
+                return 0.0
+            return p_joint * log(p_joint / (p_marginal_x * p_marginal_y))
+
         def mi(term: str, doc: str) -> float:
             "Evaluates mutual information I(X_i; Y_j) where i is the term and j is the document."
-            a = p_ij_11(term, doc) * log(
-                p_ij_11(term, doc) / (p_i_1(term) * p_j_1(doc))
-            )
-            b = p_ij_10(term, doc) * log(
-                p_ij_10(term, doc) / (p_i_1(term) * p_j_0(doc))
-            )
-            c = p_ij_01(term, doc) * log(
-                p_ij_01(term, doc) / (p_i_0(term) * p_j_1(doc))
-            )
-            d = p_ij_00(term, doc) * log(
-                p_ij_00(term, doc) / (p_i_0(term) * p_j_0(doc))
-            )
+            a = _mi_term(p_ij_11(term, doc), p_i_1(term), p_j_1(doc))
+            b = _mi_term(p_ij_10(term, doc), p_i_1(term), p_j_0(doc))
+            c = _mi_term(p_ij_01(term, doc), p_i_0(term), p_j_1(doc))
+            d = _mi_term(p_ij_00(term, doc), p_i_0(term), p_j_0(doc))
             return a + b + c + d
 
         # Create ordered sets for the terms and docs to use as the canonical ordering
@@ -108,7 +107,10 @@ class KielaClark:
             return float(np.linalg.norm(vec))
 
         def pos_cor(a: np.ndarray, b: np.ndarray) -> float:
-            return max(0, np.dot(center(a), center(b)) / (norm(a) * norm(b)))
+            na, nb = norm(a), norm(b)
+            if na == 0.0 or nb == 0.0:
+                return 0.0
+            return max(0, np.dot(center(a), center(b)) / (na * nb))
 
         # Create a square matrix to record correlation values
         self.sim_mat = np.zeros((len(self.docs), len(self.docs)))
